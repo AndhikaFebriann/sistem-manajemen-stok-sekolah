@@ -1,0 +1,19 @@
+# Secrets
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Local database / backup
+products_db.json
+users_db.json
+active_sessions.json
+remembered_user.json
+
+# Local images
+product_images/
+
+# Environment
+.env
+.env.*
