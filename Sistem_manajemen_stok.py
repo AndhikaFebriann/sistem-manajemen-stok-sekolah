@@ -119,7 +119,7 @@ def save_uploaded_image(barcode, uploaded_file):
                 file_options={
                     "content-type": content_type,
                     "upsert": "true",
-                    "cache-control": "3600",
+                    "cache-control": "60",
                 },
             )
 
@@ -129,6 +129,14 @@ def save_uploaded_image(barcode, uploaded_file):
             .from_("product-images")
             .get_public_url(filename)
         )
+
+        # Tambahkan cache-buster (?v=timestamp) supaya browser tidak
+        # menampilkan gambar LAMA dari cache saat foto diganti dengan
+        # yang baru untuk barcode yang sama (nama file di storage tetap
+        # sama, jadi tanpa ini URL-nya identik dan browser cache-nya
+        # tidak pernah refresh).
+        cache_buster = int(datetime.now().timestamp())
+        public_url = f"{public_url}?v={cache_buster}"
 
         return public_url
 
@@ -185,7 +193,10 @@ def delete_image_file(image_value):
             image_value.startswith("http://")
             or image_value.startswith("https://")
         ):
-            filename = image_value.split("/")[-1]
+            # Ambil nama file murni, buang query string cache-buster
+            # (?v=...) kalau ada, supaya nama file yang dihapus dari
+            # Supabase Storage tetap benar.
+            filename = image_value.split("/")[-1].split("?")[0]
 
             (
                 supabase
@@ -1634,7 +1645,13 @@ def update_product_details_in_db(barcode, name, merek, category, unit):
 
 
 def delete_products_from_db(barcodes_to_delete):
-    """Menghapus beberapa produk berdasarkan daftar barcode yang dipilih."""
+    """Menghapus beberapa produk berdasarkan daftar barcode yang dipilih.
+    Foto yang tersimpan di Supabase Storage ikut dihapus supaya tidak
+    jadi file sampah yang tidak terpakai."""
+    for p in st.session_state["products_data"]:
+        if p["barcode"] in barcodes_to_delete:
+            delete_image_file(p.get("image"))
+
     st.session_state["products_data"] = [
         p
         for p in st.session_state["products_data"]
@@ -1644,6 +1661,11 @@ def delete_products_from_db(barcodes_to_delete):
 
 
 def clear_all_db_data():
+    """Menghapus SELURUH data produk, termasuk semua foto yang
+    tersimpan di Supabase Storage."""
+    for p in st.session_state["products_data"]:
+        delete_image_file(p.get("image"))
+
     st.session_state["products_data"] = []
     save_data_to_supabase(st.session_state["products_data"])
 
@@ -1772,18 +1794,32 @@ with st.container(key="header_hijau"):
 
 st.markdown("---")
 
-tab1, tab2, tab3, tab4 = st.tabs([
+DAFTAR_HALAMAN = [
     "🔍 Scan Barcode / QRIS",
     "📊 Cek Stok Barang",
     "⚙️ Tambah & Edit Produk",
     "👥 Kelola Akun",
-])
+]
+
+# Navigasi memakai st.radio (bukan st.tabs) supaya kode halaman yang
+# TIDAK aktif benar-benar tidak dieksekusi sama sekali. st.tabs selalu
+# me-render/menjalankan konten SEMUA tab di balik layar meski cuma satu
+# yang keliatan -- makanya kamera di halaman Scan tetap "nyala" walau
+# lagi buka halaman lain. Dengan pengecekan if/elif di bawah, widget
+# st.camera_input cuma dibuat kalau halaman Scan yang benar-benar dipilih.
+halaman_aktif = st.radio(
+    "Menu",
+    DAFTAR_HALAMAN,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="halaman_aktif",
+)
 
 if "last_scanned_code" not in st.session_state:
     st.session_state["last_scanned_code"] = None
 
-# ----------------- TAB 1: SCANNER -----------------
-with tab1:
+# ----------------- HALAMAN 1: SCANNER -----------------
+if halaman_aktif == "🔍 Scan Barcode / QRIS":
     st.subheader("Pilih Cara Scan:")
 
     scan_mode = st.radio(
@@ -2045,8 +2081,8 @@ with tab1:
                             st.session_state["last_scanned_code"] = None
                             st.rerun()
 
-# ----------------- TAB 2: STOK BARANG -----------------
-with tab2:
+# ----------------- HALAMAN 2: STOK BARANG -----------------
+elif halaman_aktif == "📊 Cek Stok Barang":
     st.header("📊 Cek Stok Barang")
 
     df_products = get_products()
@@ -2164,8 +2200,8 @@ with tab2:
         )
 
 
-# ----------------- TAB 3: TAMBAH & EDIT PRODUK -----------------
-with tab3:
+# ----------------- HALAMAN 3: TAMBAH & EDIT PRODUK -----------------
+elif halaman_aktif == "⚙️ Tambah & Edit Produk":
     st.header("➕ Tambah Barang Baru (Manual)")
     st.caption(
         "Tambah barang tanpa perlu scan barcode. Kalau nanti barang ini "
@@ -2598,7 +2634,10 @@ with tab3:
 
         for idx, row in df_filtered_halaman.iterrows():
             with st.container(border=True):
-                with st.form(key=f"edit_form_{row['barcode']}"):
+                with st.form(
+                    key=f"edit_form_{row['barcode']}",
+                    clear_on_submit=True,
+                ):
                     c_img, c_info, c_stok, c_price, c_total, c_btn = st.columns(
                         [1.2, 2, 1.5, 1.5, 2.8, 1.3]
                     )
@@ -2819,6 +2858,6 @@ with tab3:
                     st.rerun()
 
 
-# ----------------- TAB 4: KELOLA AKUN -----------------
-with tab4:
+# ----------------- HALAMAN 4: KELOLA AKUN -----------------
+elif halaman_aktif == "👥 Kelola Akun":
     render_register_form()
