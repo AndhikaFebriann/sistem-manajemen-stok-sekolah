@@ -39,8 +39,8 @@ os.makedirs(IMG_DIR, exist_ok=True)
 # pakai password akun Gmail biasa).
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SENDER_EMAIL = "SENDER_EMAIL"
-SENDER_APP_PASSWORD = "SENDER_APP_PASSWORD"
+SENDER_EMAIL = "smkn1bdg.stok@gmail.com"
+SENDER_APP_PASSWORD = "hfbonnnolyweudhm"
 
 
 def save_uploaded_image(barcode, uploaded_file):
